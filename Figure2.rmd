@@ -1,0 +1,200 @@
+```{r packages}
+library(tidyverse)
+library(ggrepel)
+```
+
+```{r reference files}
+main_directory <- '/Volumes/Calvin/TissueCrosstalk' 
+```
+
+# Functions
+
+```{r functions}
+#Function 1
+min_max_norm <- function(x){
+  return((x-min(x))/(max(x) - min(x)))
+}
+
+#Function 2
+rank_scatter_plot <- function(correlation_file, source_gene_of_interest, row_indices, source_tissue_title, target_tissue_title, figure_number, save_files = "no", p_filter = 0.05){
+  
+  #Initial filtering step
+  select_correlation <- correlation_file %>%
+    mutate(Source_gene = gsub("Source_","", Source_gene), Target_gene = gsub("Target", "LV", Target_gene),  
+           min_max_r = min_max_norm(abs(r_correlation)), p_score = -log(p_adjusted + 1e-10)) %>%
+    filter(Source_gene == source_gene_of_interest, 
+           grepl(",\\s*.+$", Target_gene)) %>%
+    arrange(desc(min_max_r)) %>%
+    mutate(rank = row_number())
+  
+  
+  group <- select_correlation[row_indices, ]
+  
+  g <- ggplot(data = select_correlation,
+              mapping = aes(x = rank, y = p_score)) +
+    labs(title = paste0(select_correlation$Source_gene[1], ":\n", source_tissue_title, " ~ ", target_tissue_title), x = "rank", y = "-ln(p)") +
+    geom_hline(yintercept = -log(0.05), 
+               color = 'black', 
+               alpha = 0.25,
+               linewidth = 1,
+               linetype = "dashed") +
+    geom_point(size = 1, 
+               alpha = 0.2) +
+    geom_point(data = group,
+               aes(color = Target_gene),
+               size = 2,
+               alpha = 0.7,
+               color = c("blue", "violet", "red")) +
+    geom_text_repel(data = group,
+                    aes(label = Target_gene),
+                    size = 2.5,
+                    box.padding = 0.5,
+                    point.padding = 0,
+                    nudge_x = 150,
+                    nudge_y = 1,
+                    segment.color = "black",
+                    fontface = 'bold') +
+    theme(legend.position = "none",
+          plot.title = element_text(hjust = 0.5),
+          axis.line = element_line(color = "black"),
+          panel.background = element_blank(),
+          panel.grid = element_blank()
+    )
+  
+  print(g)
+  
+  if(save_files == "yes"){
+    save_figure <- file.path(main_directory, paste0("Figure_", figure_number, "_rank_", select_correlation$Source_gene[1], ".pdf"))
+    print(paste("Saving", save_figure)) 
+    
+    ggsave(save_figure, plot = g, width = 6, height = 6, dpi = 300)
+    
+    save_csv <-  file.path(main_directory, paste0(figure_number,"_", source_gene_of_interest, "_significant_correlations.csv"))
+    print(paste("Writing", save_csv))
+    
+    significant_correlations <- select_correlation %>%
+      filter(p_adjusted <= p_filter) %>%
+      arrange(p_adjusted)
+    write.csv(x = significant_correlations, save_csv , row.names = F)
+  }
+}
+
+
+#Function 3
+plot_correlation <- function(correlation_matrix, correlation_file, source_gene_of_interest, row_indices, figure_number, save_files = "no,", p_filter = 0.05){
+  
+  select_correlation <- correlation_file %>%
+    mutate(Target_gene = gsub("Target", "LV", Target_gene),
+           Source_gene = gsub("Source_","",Source_gene)) %>%
+    filter(Source_gene == source_gene_of_interest,
+           p_adjusted <= p_filter,
+           grepl(",\\s*.+$", Target_gene)) %>%
+    arrange(desc(abs(r_correlation)))
+  
+  rownames(correlation_matrix) <- gsub("Source_", "", rownames(correlation_matrix))
+  rownames(correlation_matrix) <- gsub("Target", "LV", rownames(correlation_matrix))
+  counter <- 1
+  for(i in row_indices){ 
+    correlation_matrix_select <- t(correlation_matrix[rownames(correlation_matrix) %in% c(select_correlation$Source_gene[i], 
+                                                                                          select_correlation$Target_gene[i]), ])
+    
+    g <- ggplot(data = correlation_matrix_select, 
+                mapping = aes(x = correlation_matrix_select[,1], 
+                              y = correlation_matrix_select[,2])) +
+      geom_point(size = 1) +
+      geom_smooth(method = "lm") +
+      labs(title = paste0(colnames(correlation_matrix_select)[1], " to ", colnames(correlation_matrix_select)[2], " correlation"),
+           x = colnames(correlation_matrix_select)[1],
+           y = colnames(correlation_matrix_select)[2]) +
+      theme(aspect.ratio = 0.619,
+            plot.title = element_text(hjust = 0.5),
+            axis.text.x = element_text(size = 8, color = 'black'),
+            axis.text.y = element_text(size = 8, color = 'black'),
+            axis.title.x = element_text(size = 8, color = 'black'),
+            axis.title.y = element_text(size = 8, color = 'black'), 
+            panel.grid = element_blank(),
+            axis.line = element_line(color = "black"),
+            panel.background = element_blank()) +
+      annotate("Text", x = min(correlation_matrix_select[,1]), 
+               y = (max(correlation_matrix_select[,2]) - 0.05*(max(correlation_matrix_select[,2]))), 
+               label = paste("R = ", round(select_correlation$r_correlation[i], 3), 
+                             "\np(adjusted) = ", 
+                             sprintf("%.2e", select_correlation$p_adjusted[i])),
+                             size = 3, 
+                             hjust = 0)
+    print(g)
+   if(save_files =="yes"){
+     save_name <- file.path(main_directory, paste0("Figure_", figure_number[counter],"_", colnames(correlation_matrix_select)[1], "_to_", colnames(correlation_matrix_select)[2], ".pdf"))
+     print(paste0("Saving ", save_name))
+     ggsave(save_name, plot = g, width = 6, height = 6, dpi = 300)
+   }
+   counter <- counter + 1
+  }
+}
+
+```
+
+# Figures
+
+## Figure 2A
+
+```{r Figure 2A, ranking ADIPOQ, Adipose(Subcutaneous) to Heart(Left Ventricle)}
+correlation_file <- read.csv('/Volumes/Calvin/TissueCrosstalk/Tissue_Pairs/Adipose - Subcutaneous_to_Heart - Left Ventricle/Correlation_results.csv')
+source_gene_of_interest <- "ADIPOQ"
+row_indices <- c(21, 85, 136)
+source_tissue_title <- "Adipose(Subcutaneous)"
+target_tissue_title <- "Heart(Left Ventricle)"
+
+rank_scatter_plot(correlation_file, 
+                  source_gene_of_interest, 
+                  row_indices, 
+                  source_tissue_title, 
+                  target_tissue_title, 
+                  "2A", 
+                  save_files = "yes", 
+                  p_filter = 0.05)
+```
+
+## Figure 2B
+
+```{r Figure 2B, ranking AHSG, Liver to Heart(Left Ventricle)}
+correlation_file <- read.csv('/Volumes/Calvin/TissueCrosstalk/Tissue_Pairs/Liver_to_Heart - Left Ventricle/Correlation_results.csv')
+source_gene_of_interest <- "AHSG"
+row_indices <- c(9, 14 ,83)
+source_tissue_title <- "Liver"
+target_tissue_title <- "Heart(Left Ventricle)"
+
+rank_scatter_plot(correlation_file, 
+                  source_gene_of_interest, 
+                  row_indices, 
+                  source_tissue_title, 
+                  target_tissue_title, 
+                  "2B", 
+                  save_files = "yes", 
+                  p_filter = 0.05)
+```
+
+## Correlation plots
+
+### Figure 2C - 2E
+
+```{r Figure 2C - 2E}
+correlation_matrix <- read.delim('/Volumes/Calvin/TissueCrosstalk/Tissue_Pairs/Adipose - Subcutaneous_to_Heart - Left Ventricle/Correlation_data.txt', sep = "\t")
+correlation_file <- read.csv('/Volumes/Calvin/TissueCrosstalk/Tissue_Pairs/Adipose - Subcutaneous_to_Heart - Left Ventricle/Correlation_results.csv')
+source_gene_of_interest <- "ADIPOQ"
+row_indices <- c(21, 85, 136) #Save as above, just copied and pasted
+figure_number <- c("2C", "2D", "2E")
+plot_correlation(correlation_matrix, correlation_file, source_gene_of_interest, row_indices, figure_number, save_files = "yes", p_filter = 0.05)
+
+```
+
+### Figure 2F - 2H
+
+```{r Figure 2F - 2H}
+correlation_matrix <- read.delim('/Volumes/Calvin/TissueCrosstalk/Tissue_Pairs/Liver_to_Heart - Left Ventricle/Correlation_data.txt', sep = "\t")
+correlation_file <- read.csv('/Volumes/Calvin/TissueCrosstalk/Tissue_Pairs/Liver_to_Heart - Left Ventricle/Correlation_results.csv')
+source_gene_of_interest <- "AHSG"
+row_indices <- c(9, 14 ,83)
+figure_number <- c("2F", "2G", "2H")
+plot_correlation(correlation_matrix, correlation_file, source_gene_of_interest, row_indices, figure_number, save_files = "yes", p_filter = 0.05)
+```
