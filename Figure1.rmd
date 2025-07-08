@@ -1,0 +1,272 @@
+```{r packages}
+library(tidyverse)
+library(reshape2)
+library(ggrepel)
+```
+
+# Code block for all reference files
+
+```{r reference files}
+summary_file <- read.csv('/Volumes/Calvin/TissueCrosstalk/Figure1 items/correlation_count_summary.csv') #Summary file used for Figure 1B and 1C
+main_directory <- '/Volumes/Calvin/TissueCrosstalk' 
+```
+
+# Code block for all personal functions
+
+```{r functions}
+#Function 1
+z_score_normalization <- function(x){
+  mu_x <- mean(x)
+  sigma_x <- sd(x)
+  return((x - mu_x)/sigma_x)
+}
+
+#Function 2
+score_scatter_plot <- function(condition_directory, 
+                          source_tissue, 
+                          target_tissue, 
+                          highlighted_genes,
+                          gene_colors,
+                          figure_number, 
+                          save_plot = "no",
+                          x_offset = 0,
+                          y_offset = 0.5){
+  Ssec_results <- read.csv(file.path(condition_directory, 'Ssec_results.csv')) %>%
+    mutate(Source_gene = gsub("Source_", "", Source_gene))
+  
+  condition <- trimws(strsplit(basename(condition_directory), "_to_")[[1]])
+  
+  highlighted_df <- Ssec_results %>%
+    filter(Source_gene %in% highlighted_genes)
+  
+  g <- ggplot(Ssec_results, aes(x = p_Ssec_z, y = -r_Ssec_z)) +
+    geom_point(size = 1, 
+               aes(color = Source_gene),
+               alpha = 0.5) +
+    labs(title = paste(source_tissue, "to", target_tissue),
+         x = "p score",
+         y = "r score",
+         color = "Source Gene") + 
+    xlim(-2, 4) +
+    theme(plot.title = element_text(size = 14, h = 0.5, face = 'bold'),
+          axis.text.x = element_text(size = 12, color = 'black'),
+          axis.text.y = element_text(size = 12, color = 'black'),
+          axis.title = element_text(size = 12, face = 'bold'),
+          axis.line = element_line(color = 'black'),
+          panel.grid = element_blank(),
+          panel.background = element_blank(),
+          legend.position = "none") +
+    geom_point(data = highlighted_df, 
+               aes(color = Source_gene), 
+               size = 3,
+               alpha = 0.7) + 
+    scale_color_manual(values = gene_colors) +
+    #geom_text_repel used to orient/space text on ggplot, adjust parameters as needed
+    geom_text_repel(data = highlighted_df, 
+                    aes(label = Source_gene),
+                    size = 5,
+                    box.padding = 2.5,
+                    point.padding = 0.8,
+                    fontface = "bold",
+                    segment.color = "black",
+                    nudge_x = x_offset,
+                    nudge_y = y_offset)
+    
+  print(g) 
+  
+  if(save_plot == "yes"){
+    save_information <- file.path(main_directory, paste0("PDF_Figure_", figure_number,"_", source_tissue,"_to_",target_tissue,".pdf"))
+    print(paste0("Saving ", save_information," to ", main_directory))
+    ggsave(save_information, width = 6.5, height = 6.5, g, dpi = 300)
+  }
+}
+```
+
+# Code block for generating heat map
+
+```{r figure 1B, heatmap}
+heatmap_data <- summary_file %>%
+  mutate(Target = gsub("_secretomics", "", Target),
+         Z_score = z_score_normalization(Sig_correlations),
+         log_10 = log10(Sig_correlations + 1e-6),
+         log_10z = z_score_normalization(log_10)) %>%
+  rename(Significant_Correlations = Sig_correlations) %>%
+  arrange(desc(Significant_Correlations))
+
+unique_ID <- heatmap_data %>%
+  distinct(Source)
+
+unique_identifiers <- rev(unique_ID$Source)
+
+n <- length(unique_identifiers)
+square_matrix <- matrix(min(heatmap_data$log_10), nrow = n, ncol = n)
+rownames(square_matrix) <- unique_identifiers
+colnames(square_matrix) <- unique_identifiers
+
+rownames_equal_colnames <- rownames(square_matrix) %in% colnames(square_matrix)
+
+# Loop through the row names and set the diagonal values as -Inf so that it looks gray
+for (i in seq_along(rownames(square_matrix))) {
+  if (rownames(square_matrix)[i] %in% colnames(square_matrix)) {
+    square_matrix[rownames(square_matrix)[i], rownames(square_matrix)[i]] <- -Inf
+  }
+}
+#
+
+for(i in 1:nrow(heatmap_data)){
+  row_name <- heatmap_data$Source[i]
+  col_name <- heatmap_data$Target[i]
+  count <- heatmap_data$log_10[i]
+  
+  if(row_name %in% rownames(square_matrix) && col_name %in% colnames(square_matrix)) {
+    print(paste(row_name, col_name, count))
+    square_matrix[row_name, col_name] <- count  # Assign the count to the matrix
+  } else {
+    warning(paste("Row or column name not found:", row_name, col_name))
+  }
+}
+
+for_heatmap <- melt(square_matrix, value.name = "log10")
+heatmap_plot <- ggplot(for_heatmap, aes(Var1, Var2, fill = log10)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "white", 
+                       mid = "pink", 
+                       high = "purple4", 
+                       midpoint = 2.5,
+                       limits = c(0,5),
+                       oob = scales::squish,
+                       na.value = rgb(0,0,0, alpha = 0.3)) +
+  labs(title = "Heatmap of Significant Correlations", 
+      x = "Target Tissues",
+      y = "Source Tissues") +
+  theme_minimal() + 
+  scale_y_discrete(position="right") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5, face = 'bold'),
+        axis.title.x = element_text(size = 10, face = 'bold', color = 'black'),
+        axis.title.y = element_text(size = 10, face = 'bold', color = 'black'),
+        axis.text.x = element_text(size = 9, angle = 90, hjust = 1, color = 'black'),
+        axis.text.y = element_text(size = 9, color = 'black'),
+        axis.line = element_line(color = "black",),
+        legend.position = "left"
+       )
+
+print(heatmap_plot)
+ggsave('/Volumes/Calvin/TissueCrosstalk/Figure_1B_Heatmap.pdf', plot = heatmap_plot, width = 10 , height = 10, dpi = 300)
+```
+
+# Code block for generating box plot
+
+```{r figure 1C, box plot}
+boxplot_data <- summary_file %>%
+  group_by(Source) %>%
+  mutate(IQR = IQR(Sig_correlations)) %>%
+  ungroup() %>%
+  mutate(Source = reorder(Source, -IQR))
+
+main_plot <- ggplot(boxplot_data, aes(x=Source, y=Sig_correlations)) + 
+  geom_boxplot(fill = "lightgreen") +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5, face = 'bold'),
+    axis.title.x = element_text(size = 10, face = 'bold'),
+    axis.title.y = element_text(size = 10, face = 'bold'),
+    axis.text.x = element_text(size = 9, angle = 45, hjust = 1, color = 'black'),
+    axis.text.y = element_text(size = 9, angle = 45, hjust = 1, color = 'black'),
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black")) +
+  labs(title="Number of Signficant Correlations per Tissue", y = "Significant Correlations", x = "Source Tissues")
+
+inset_data <- boxplot_data %>%
+  filter(Source %in% levels(boxplot_data$Source)[50:52])
+y_min <- min(inset_data$Sig_correlations, na.rm = TRUE)
+y_max <- max(inset_data$Sig_correlations, na.rm = TRUE)
+
+inset_plot <- ggplot(inset_data,
+                     aes(x=Source, y=Sig_correlations)) +
+  geom_boxplot(fill = "lightblue") +
+  coord_cartesian(ylim = c(0, NA)) +
+  theme_minimal() + 
+  theme(axis.title.x = element_blank(), 
+        axis.title.y = element_blank(),
+        axis.text.x = element_text(size = 9, angle = 45, hjust = 1, color = 'black'),
+        axis.text.y = element_text(size = 9, color = 'black'),
+        panel.grid = element_blank(),
+        axis.line = element_line(color = "black")
+#        axis.text.x = element_blank())
+)
+
+box_plot <- main_plot +
+  annotation_custom(ggplotGrob(inset_plot),
+                    xmin = 35, xmax = 45, ymin = 25000, ymax = 90000)
+
+print(box_plot)
+
+ggsave('/Volumes/Calvin/TissueCrosstalk/Figure1C_BoxPlot.pdf', box_plot, width = 12, height = 8, dpi = 300)
+```
+
+# Code block for generating scatter plot of r score against p score
+
+## Key tissue types of interest
+
+-   Adipose - Subcutaneous
+-   Adipose - Visceral (Omentum)
+-   Heart - Left Ventricle
+-   Liver Muscle - Skeletal
+
+## Figure 1D, scoring: Adipose(Subcutaneous) to Heart(Left Ventricle)
+```{r figure 1D, scoring: Adipose - Subcutaneous to Heart - Left Ventricle}
+
+condition_directory <- file.path(main_directory, 'Tissue_Pairs', 'Adipose - Subcutaneous_to_Heart - Left Ventricle')
+source_tissue <- 'Adipose - Subcutaneous'
+target_tissue <- 'Heart - Left Ventricle'
+
+highlighted_genes <- c("ADIPOQ","THPO", "AZGP1") #"LGALS3")
+gene_colors <- setNames(c("red", "gold", "brown", "brown2"), highlighted_genes)
+figure_number = "1D"
+
+score_scatter_plot(condition_directory, source_tissue, target_tissue, highlighted_genes, gene_colors, figure_number, save_plot = "yes", x_offset = 0.25, y_offset = 0.5)
+
+```
+
+## Figure 1E, scoring: Heart(Left Ventricle) to Adipose(Subcutaneous)
+```{r figure 1E, scoring: Heart - Left Ventricle to Adipose - Subcutaneous}
+
+condition_directory <- file.path(main_directory, 'Tissue_Pairs', 'Heart - Left Ventricle_to_Adipose - Subcutaneous') 
+source_tissue <- 'Heart - Left Ventricle'
+target_tissue <- 'Adipose - Subcutaneous'
+
+highlighted_genes <- c("ADIPOQ","THPO","AZGP1") #"LGALS3")
+gene_colors <- setNames(c("red", "gold", "brown", "brown2"), highlighted_genes)
+figure_number <- '1E'
+
+score_scatter_plot(condition_directory, source_tissue, target_tissue, highlighted_genes, gene_colors, figure_number, save_plot = "yes", x_offset = 0, y_offset = 0.5)
+```
+
+## Figure 1F, scoring: Liver to Heart(Left Ventricle)
+```{r figure 1F, scoring: Liver to Heart - Left Ventricle}
+condition_directory <- file.path(main_directory, 'Tissue_Pairs', 'Liver_to_Heart - Left Ventricle')
+source_tissue <- 'Liver'
+target_tissue <- 'Heart - Left Ventricle'
+
+
+highlighted_genes <- c("AHSG", "F11", "INHBE")
+gene_colors <- setNames(c("peru", "brown", "maroon"), highlighted_genes)
+
+figure_number <- '1F'
+
+score_scatter_plot(condition_directory, source_tissue, target_tissue, highlighted_genes, gene_colors, figure_number, save_plot = "yes", x_offset = 0.5, y_offset = 0.5)
+```
+
+## Figure 1G, scoring: Heart(Left Ventricle) to Liver 
+```{r figure 1G, scoring: Heart - Left Ventricle to Liver}
+condition_directory <- file.path(main_directory, 'Tissue_Pairs', 'Heart - Left Ventricle_to_Liver')
+source_tissue <- 'Heart - Left Ventricle'
+target_tissue <- 'Liver'
+
+highlighted_genes <- c("AHSG", "F11", "INHBE")
+gene_colors <- setNames(c("peru", "brown", "maroon"), highlighted_genes)
+
+figure_number <- '1G'
+
+score_scatter_plot(condition_directory, source_tissue, target_tissue, highlighted_genes, gene_colors, figure_number, save_plot = "yes", x_offset = 0.5, y_offset = 0.5)
+```
