@@ -9,13 +9,14 @@ Massive transcriptomics data allow gene relationships to be discovered from thei
 
 ## Code
 ### Processing GTEx v8 data
-- 01_ReadGTExData.R: Read in GTEx v8, all samples, save as DDS, then batch correct with ComBAT
-- 02_CompareGtex8BatchEffect.R: Assess batch effects of the GTEx v8 data prior and post ComBAT corrections
-- 03_MakePLIERGTExVSTComBatAgeCorrNoSecretome.R: Applies PLIER via wrapper function from MultiPLIER
+- 01_ReadGTExData.R: Read in GTEx v8, all samples, save as DDS, then batch correct with ComBAT.
+- 02_CompareGtex8BatchEffect.R: Assess batch effects of the GTEx v8 data prior and post ComBAT corrections.
+- 03_MakePLIERGTExVSTComBatAgeCorrNoSecretome.R: Applies PLIER via wrapper function from MultiPLIER.
 
 ### Analysis
 - 10_CalculateTissueCorrelation_V2.R: Loop through all tissue pairs to generate correlation matrices.
-- 14_CaclulateAllSScores.R: Calculate Ssec score between tissue pairs
+- 12_ReadInterOrganCorrelation.R: Generate tables from inter-organ correlation results for all significant co-expression between the source tissue secretome and target tissue latent variables.
+- 14_CaclulateAllSScores.R: Calculate Ssec score between tissue pairs.
 
 
 
