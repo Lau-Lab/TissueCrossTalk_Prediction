@@ -14,7 +14,7 @@ Massive transcriptomics data allow gene relationships to be discovered from thei
 - 03_MakePLIERGTExVSTComBatAgeCorrNoSecretome.R: Applies PLIER via wrapper function from MultiPLIER.
 
 ### Analysis
-- 10_CalculateTissueCorrelation_V2.R: Loop through all tissue pairs to generate correlation matrices.
+- 10_CalculateTissueCorrelation_V2.R: Loop through all tissue pairs, apply PLIER transfer learning framework, generate correlation matrices.
 - 12_ReadInterOrganCorrelation.R: Generate tables from inter-organ correlation results for all significant co-expression between the source tissue secretome and target tissue latent variables.
 - 14_CaclulateAllSScores.R: Calculate Ssec score between tissue pairs.
 
